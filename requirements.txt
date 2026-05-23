@@ -12,6 +12,11 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 slowapi>=0.1.9
 
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0
+
 # Additional utilities
 numpy>=1.24.0
 tqdm>=4.65.0
