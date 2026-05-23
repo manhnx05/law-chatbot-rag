@@ -11,11 +11,11 @@ from sentence_transformers import SentenceTransformer
 import faiss
 
 # Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from config import config
-from utils.logger import get_logger
-from utils.metrics import Timer
+from src.config import config
+from src.utils.logger import get_logger
+from src.utils.metrics import Timer
 
 logger = get_logger("retriever")
 
