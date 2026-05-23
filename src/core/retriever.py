@@ -123,15 +123,17 @@ class LawRetriever:
         self,
         query: str,
         k: int = None,
-        score_threshold: float = None
+        score_threshold: float = None,
+        max_retries: int = 3
     ) -> List[Dict]:
         """
-        Search for relevant law articles
+        Search for relevant law articles with retry logic
         
         Args:
             query: Search query
             k: Number of results to return
             score_threshold: Minimum similarity score (0-1)
+            max_retries: Maximum number of retries on failure
         
         Returns:
             List of search results with ref, text, and score
@@ -141,54 +143,59 @@ class LawRetriever:
         
         logger.debug(f"Searching: '{query}' (k={k}, threshold={score_threshold})")
         
-        try:
-            with Timer() as timer:
-                # Encode query
-                query_vec = self.model.encode(
-                    [query],
-                    normalize_embeddings=config.retrieval.normalize_embeddings,
-                    convert_to_numpy=True
-                ).astype('float32')
+        for attempt in range(max_retries):
+            try:
+                with Timer() as timer:
+                    # Encode query
+                    query_vec = self.model.encode(
+                        [query],
+                        normalize_embeddings=config.retrieval.normalize_embeddings,
+                        convert_to_numpy=True
+                    ).astype('float32')
+                    
+                    # Search FAISS index
+                    scores, indices = self.index.search(query_vec, k)
                 
-                # Search FAISS index
-                scores, indices = self.index.search(query_vec, k)
-            
-            logger.debug(f"Search completed in {timer.get_elapsed():.3f}s")
-            
-            # Process results
-            results = []
-            for idx, score in zip(indices[0], scores[0]):
-                # Validate index
-                if idx < 0 or idx >= len(self.metadata):
-                    logger.warning(f"Invalid index: {idx}")
-                    continue
+                logger.debug(f"Search completed in {timer.get_elapsed():.3f}s")
                 
-                # Check score threshold
-                if score < score_threshold:
-                    logger.debug(f"Skipping result with low score: {score:.3f}")
-                    continue
+                # Process results
+                results = []
+                for idx, score in zip(indices[0], scores[0]):
+                    # Validate index
+                    if idx < 0 or idx >= len(self.metadata):
+                        logger.warning(f"Invalid index: {idx}")
+                        continue
+                    
+                    # Check score threshold
+                    if score < score_threshold:
+                        logger.debug(f"Skipping result with low score: {score:.3f}")
+                        continue
+                    
+                    # Get metadata
+                    meta = self.metadata[idx]
+                    
+                    # Load content
+                    content = self._load_content(meta['file'])
+                    if content is None:
+                        continue
+                    
+                    results.append({
+                        "ref": meta['title'],
+                        "text": content,
+                        "score": round(float(score), 3),
+                        "id": meta['id']
+                    })
                 
-                # Get metadata
-                meta = self.metadata[idx]
+                logger.debug(f"Returned {len(results)} results")
+                return results
                 
-                # Load content
-                content = self._load_content(meta['file'])
-                if content is None:
-                    continue
-                
-                results.append({
-                    "ref": meta['title'],
-                    "text": content,
-                    "score": round(float(score), 3),
-                    "id": meta['id']
-                })
-            
-            logger.debug(f"Returned {len(results)} results")
-            return results
-            
-        except Exception as e:
-            logger.error(f"Search failed: {e}")
-            return []
+            except Exception as e:
+                logger.warning(f"Search attempt {attempt + 1}/{max_retries} failed: {e}")
+                if attempt == max_retries - 1:
+                    logger.error(f"Search failed after {max_retries} attempts: {e}")
+                    return []
+        
+        return []
     
     def get_article_by_id(self, article_id: str) -> Optional[Dict]:
         """
