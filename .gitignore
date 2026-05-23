@@ -52,11 +52,11 @@ storage/law_index.faiss
 storage/law_metadata.json
 storage/articles/*.txt
 
-# Markdown files (except readme.md and README_V2.md)
+# Markdown files (except readme.md and CHANGELOG.md)
 *.md
 !readme.md
 !README.md
-!README_V2.md
+!CHANGELOG.md
 
 # Models cache
 .cache/
