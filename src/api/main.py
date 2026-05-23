@@ -8,10 +8,10 @@ from typing import List, Optional, Dict
 from datetime import datetime
 import uvicorn
 
-from config import config
-from modules.retriever import LawRetriever
-from utils.logger import get_logger
-from utils.metrics import MetricsTracker, QueryMetrics, Timer
+from src.config import config
+from src.core.retriever import LawRetriever
+from src.utils.logger import get_logger
+from src.utils.metrics import MetricsTracker, QueryMetrics, Timer
 import requests
 
 logger = get_logger("api", config.paths.logs_dir)
