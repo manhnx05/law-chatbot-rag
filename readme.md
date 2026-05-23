@@ -32,13 +32,32 @@ RAG/
 
 ## Cài đặt
 
-### 1. Cài đặt Python packages
+### 1. Clone repository
+
+```bash
+git clone <repository-url>
+cd law-chatbot-rag
+```
+
+### 2. Cài đặt Python packages
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Cài đặt Ollama
+### 3. Cấu hình môi trường (Optional)
+
+```bash
+# Copy file cấu hình mẫu
+cp .env.example .env
+
+# Chỉnh sửa .env theo nhu cầu
+# - API_KEY: Đặt key để bật authentication cho API
+# - ALLOWED_ORIGINS: Cấu hình CORS origins
+# - LOG_LEVEL: DEBUG, INFO, WARNING, ERROR
+```
+
+### 4. Cài đặt Ollama
 
 1. Tải Ollama: https://ollama.com/download
 2. Cài đặt xong, mở terminal chạy:
@@ -47,26 +66,58 @@ pip install -r requirements.txt
 ollama pull llama3.2:1b
 ```
 
-### 3. Xây dựng database
+### 5. Xây dựng database
 
 ```bash
-# Bước 1: Tách PDF thành các điều luật
-python modules/split_law.py
+# Sử dụng Makefile (khuyến nghị)
+make build
 
-# Bước 2: Tạo vector embeddings và FAISS index
-python modules/embed_law.py
+# Hoặc chạy trực tiếp
+python scripts/build_database.py
 ```
 
 **Lưu ý:** Cần có file `data/luat_lao_dong.pdf` trước khi chạy.
 
 ## Chạy ứng dụng
 
+### Chạy Web UI (Streamlit)
+
 ```bash
-# Chạy từ thư mục gốc của project
-streamlit run modules/web_app.py
+# Sử dụng Makefile
+make ui
+
+# Hoặc chạy trực tiếp
+python scripts/run_ui.py
 ```
 
 Trình duyệt sẽ tự động mở tại `http://localhost:8501`
+
+### Chạy REST API (FastAPI)
+
+```bash
+# Sử dụng Makefile
+make api
+
+# Hoặc chạy trực tiếp
+python scripts/run_api.py
+```
+
+API sẽ chạy tại `http://localhost:8000`
+- Docs: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+### Chạy Tests
+
+```bash
+# Chạy tất cả tests
+make test
+
+# Hoặc chạy pytest trực tiếp
+pytest tests/ -v
+
+# Chạy test cụ thể
+pytest tests/test_unit.py -v
+```
 
 ## Cách hoạt động
 
@@ -100,6 +151,53 @@ Trình duyệt sẽ tự động mở tại `http://localhost:8501`
 | `gemma2:2b` | 1.6GB | 4GB | Chất lượng tốt |
 | `llama3.2:3b` | 2.0GB | 6GB | Chất lượng cao |
 | `phi3:latest` | 2.2GB | 8GB | Mạnh nhất |
+
+## API Usage
+
+### Authentication
+
+Nếu `API_KEY` được set trong `.env`, bạn cần gửi key trong header:
+
+```bash
+curl -H "X-API-Key: your-api-key" http://localhost:8000/search
+```
+
+### Endpoints
+
+#### Search Articles
+```bash
+POST /search
+{
+  "query": "quyền của người lao động",
+  "top_k": 5,
+  "score_threshold": 0.3
+}
+```
+
+#### Query with LLM
+```bash
+POST /query
+{
+  "query": "Điều 1 nói về gì?",
+  "top_k": 3,
+  "model": "llama3.2:1b",
+  "temperature": 0.0
+}
+```
+
+#### Get Article by ID
+```bash
+GET /article/dieu_001
+```
+
+#### Get Statistics
+```bash
+GET /stats
+```
+
+### Rate Limits
+- Search: 30 requests/minute
+- Query: 10 requests/minute
 
 ## Troubleshooting
 
@@ -136,8 +234,23 @@ ollama pull qwen2:0.5b
 ```
 
 ### Lỗi import modules
-- Đảm bảo chạy từ thư mục gốc (không phải từ trong `modules/`)
+- Đảm bảo chạy từ thư mục gốc
 - Kiểm tra Python path và dependencies
+- Thử: `pip install -e .` để install package mode
+
+### API không khởi động
+```bash
+# Kiểm tra port 8000 có bị chiếm không
+netstat -ano | findstr :8000
+
+# Thử port khác
+uvicorn src.api.main:app --port 8001
+```
+
+### Rate limit errors
+- Đợi 1 phút và thử lại
+- Hoặc tăng limit trong code (src/api/main.py)
+- Hoặc disable rate limiting bằng cách comment @limiter.limit()
 
 ### Model trả lời chậm/sai
 - Thử model lớn hơn: `llama3.2:3b` hoặc `phi3:latest`
@@ -173,12 +286,28 @@ MODEL_NAME = "keepitreal/vietnamese-sbert"  # Model khác
 
 ## Tính năng
 
+### Core Features
 - Tìm kiếm ngữ nghĩa chính xác với Vietnamese BERT
 - Auto-fallback models - Tự động chọn model khả dụng
 - Hiển thị nguồn tham khảo với độ liên quan
 - Error handling thông minh với gợi ý sửa lỗi
-- Giao diện đơn giản, dễ sử dụng
 - Hoạt động offline hoàn toàn
+
+### API Features (v2.0)
+- **RESTful API** với FastAPI
+- **Authentication** - API key based (optional)
+- **Rate Limiting** - Bảo vệ khỏi abuse
+- **CORS Configuration** - Configurable origins
+- **Async Support** - Non-blocking operations
+- **Retry Logic** - Automatic retry on failures
+- **Comprehensive Metrics** - Track performance
+
+### UI Features
+- Giao diện chat đơn giản, dễ sử dụng
+- Real-time metrics display
+- Model selection dropdown
+- Configurable search parameters
+- Context expansion để xem nguồn
 
 ## Performance
 
@@ -194,11 +323,26 @@ MODEL_NAME = "keepitreal/vietnamese-sbert"  # Model khác
 
 ## Roadmap
 
+### Completed ✅
+- [x] Professional project structure
+- [x] FastAPI REST API
+- [x] API authentication
+- [x] Rate limiting
+- [x] Async support
+- [x] Retry logic
+- [x] Unit tests
+- [x] Comprehensive logging
+- [x] Metrics tracking
+
+### Planned 🚧
 - [ ] Thêm support cho nhiều bộ luật khác
 - [ ] Cải thiện prompt engineering
 - [ ] Thêm tính năng export câu trả lời
 - [ ] Tích hợp voice input/output
-- [ ] API endpoint cho integration
+- [ ] Redis caching layer
+- [ ] Docker containerization
+- [ ] CI/CD pipeline
+- [ ] Monitoring dashboard (Prometheus/Grafana)
 
 ## Đóng góp
 
