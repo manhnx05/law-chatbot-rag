@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import List, Dict, Optional
 
 # Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from config import config
-from utils.logger import get_logger
+from src.config import config
+from src.utils.logger import get_logger
 
 logger = get_logger("split_law", config.paths.logs_dir)
 
