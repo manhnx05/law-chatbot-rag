@@ -213,11 +213,18 @@ async def search(request: SearchRequest):
         raise HTTPException(status_code=503, detail="Retriever not initialized")
     
     try:
+        import asyncio
+        
         with Timer() as timer:
-            results = retriever.search(
-                query=request.query,
-                k=request.top_k,
-                score_threshold=request.score_threshold
+            # Run search in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(
+                None,
+                lambda: retriever.search(
+                    query=request.query,
+                    k=request.top_k,
+                    score_threshold=request.score_threshold
+                )
             )
         
         return SearchResponse(
