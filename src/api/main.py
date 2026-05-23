@@ -1,7 +1,7 @@
 """
 FastAPI REST API for Law Chatbot RAG
 """
-from fastapi import FastAPI, HTTPException, Query, Security, Depends
+from fastapi import FastAPI, HTTPException, Query, Security, Depends, Request
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -9,6 +9,9 @@ from typing import List, Optional, Dict
 from datetime import datetime
 import uvicorn
 import os
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from src.config import config
 from src.core.retriever import LawRetriever
@@ -17,6 +20,9 @@ from src.utils.metrics import MetricsTracker, QueryMetrics, Timer
 import requests
 
 logger = get_logger("api", config.paths.logs_dir)
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # API Key authentication
 API_KEY = os.getenv("API_KEY", "")  # Set empty string to disable auth
@@ -39,6 +45,10 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Add rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware
 app.add_middleware(
@@ -216,7 +226,8 @@ async def health_check():
 
 
 @app.post("/search", response_model=SearchResponse, tags=["Search"])
-async def search(request: SearchRequest, api_key: str = Depends(verify_api_key)):
+@limiter.limit("30/minute")
+async def search(request: Request, search_request: SearchRequest, api_key: str = Depends(verify_api_key)):
     """
     Search for relevant law articles
     
@@ -236,14 +247,14 @@ async def search(request: SearchRequest, api_key: str = Depends(verify_api_key))
             results = await loop.run_in_executor(
                 None,
                 lambda: retriever.search(
-                    query=request.query,
-                    k=request.top_k,
-                    score_threshold=request.score_threshold
+                    query=search_request.query,
+                    k=search_request.top_k,
+                    score_threshold=search_request.score_threshold
                 )
             )
         
         return SearchResponse(
-            query=request.query,
+            query=search_request.query,
             results=[
                 SearchResult(
                     id=r.get("id", ""),
@@ -262,7 +273,8 @@ async def search(request: SearchRequest, api_key: str = Depends(verify_api_key))
 
 
 @app.post("/query", response_model=QueryResponse, tags=["Query"])
-async def query(request: QueryRequest, api_key: str = Depends(verify_api_key)):
+@limiter.limit("10/minute")
+async def query(request: Request, query_request: QueryRequest, api_key: str = Depends(verify_api_key)):
     """
     Ask a question and get AI-generated answer
     
@@ -278,15 +290,15 @@ async def query(request: QueryRequest, api_key: str = Depends(verify_api_key)):
     if not ollama.check_connection():
         raise HTTPException(status_code=503, detail="Ollama not running")
     
-    model_name = request.model or config.model.llm_model
+    model_name = query_request.model or config.model.llm_model
     
     try:
         # Search for context
         with Timer() as retrieval_timer:
             context = retriever.search(
-                query=request.query,
-                k=request.top_k,
-                score_threshold=request.score_threshold
+                query=query_request.query,
+                k=query_request.top_k,
+                score_threshold=query_request.score_threshold
             )
         
         if not context:
@@ -296,7 +308,7 @@ async def query(request: QueryRequest, api_key: str = Depends(verify_api_key)):
         ctx_str = "\n\n".join([f"{r['ref']}:\n{r['text']}" for r in context])
         prompt = f"""Dựa trên Bộ luật Lao động 2019, trả lời câu hỏi sau:
 
-Câu hỏi: {request.query}
+Câu hỏi: {query_request.query}
 
 Thông tin liên quan:
 {ctx_str}
@@ -305,7 +317,7 @@ Trả lời ngắn gọn và trích dẫn điều luật:"""
         
         # Generate answer
         with Timer() as llm_timer:
-            answer, success = ollama.generate(prompt, model_name, request.temperature)
+            answer, success = ollama.generate(prompt, model_name, query_request.temperature)
         
         if not success:
             raise HTTPException(status_code=500, detail=f"LLM generation failed: {answer}")
@@ -314,7 +326,7 @@ Trả lời ngắn gọn và trích dẫn điều luật:"""
         total_time = retrieval_timer.get_elapsed() + llm_timer.get_elapsed()
         if metrics_tracker:
             metrics = QueryMetrics(
-                query=request.query,
+                query=query_request.query,
                 timestamp=datetime.now().isoformat(),
                 retrieval_time=retrieval_timer.get_elapsed(),
                 llm_time=llm_timer.get_elapsed(),
@@ -328,7 +340,7 @@ Trả lời ngắn gọn và trích dẫn điều luật:"""
             metrics_tracker.save()
         
         return QueryResponse(
-            query=request.query,
+            query=query_request.query,
             answer=answer,
             context=[
                 SearchResult(
