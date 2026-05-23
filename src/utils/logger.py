@@ -87,7 +87,7 @@ def get_logger(name: str, log_dir: Optional[Path] = None) -> logging.Logger:
     Returns:
         Logger instance
     """
-    from config import config
+    from src.config import config
     
     log_file = None
     if log_dir:
