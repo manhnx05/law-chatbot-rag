@@ -1,12 +1,14 @@
 """
 FastAPI REST API for Law Chatbot RAG
 """
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Security, Depends
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from datetime import datetime
 import uvicorn
+import os
 
 from src.config import config
 from src.core.retriever import LawRetriever
@@ -15,6 +17,19 @@ from src.utils.metrics import MetricsTracker, QueryMetrics, Timer
 import requests
 
 logger = get_logger("api", config.paths.logs_dir)
+
+# API Key authentication
+API_KEY = os.getenv("API_KEY", "")  # Set empty string to disable auth
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)):
+    """Verify API key if authentication is enabled"""
+    if API_KEY and api_key != API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing API key"
+        )
+    return api_key
 
 # Initialize FastAPI
 app = FastAPI(
@@ -28,7 +43,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -201,7 +216,7 @@ async def health_check():
 
 
 @app.post("/search", response_model=SearchResponse, tags=["Search"])
-async def search(request: SearchRequest):
+async def search(request: SearchRequest, api_key: str = Depends(verify_api_key)):
     """
     Search for relevant law articles
     
@@ -247,7 +262,7 @@ async def search(request: SearchRequest):
 
 
 @app.post("/query", response_model=QueryResponse, tags=["Query"])
-async def query(request: QueryRequest):
+async def query(request: QueryRequest, api_key: str = Depends(verify_api_key)):
     """
     Ask a question and get AI-generated answer
     
@@ -392,7 +407,7 @@ async def get_stats():
 
 
 @app.post("/cache/clear", tags=["Admin"])
-async def clear_cache():
+async def clear_cache(api_key: str = Depends(verify_api_key)):
     """Clear retriever cache"""
     if not retriever:
         raise HTTPException(status_code=503, detail="Retriever not initialized")
