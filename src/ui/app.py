@@ -9,11 +9,12 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # Add parent directory to path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from config import config
-from utils.logger import get_logger
-from utils.metrics import MetricsTracker, QueryMetrics, Timer
+from src.config import config
+from src.core.retriever import LawRetriever
+from src.utils.logger import get_logger
+from src.utils.metrics import MetricsTracker, QueryMetrics, Timer
 
 logger = get_logger("web_app", config.paths.logs_dir)
 
@@ -270,7 +271,7 @@ if not config.paths.faiss_index_path.exists():
 @st.cache_resource
 def load_retriever():
     try:
-        from modules.retriever import LawRetriever
+        from src.core.retriever import LawRetriever
         return LawRetriever()
     except Exception as e:
         st.error(f"❌ Lỗi khởi tạo: {e}")
